@@ -31,7 +31,7 @@ int main(void)
 
     int sockfd = -1;
     int optval = 1;
-    for (struct addrinfo *i = res; res != NULL; i = i->ai_next) {
+    for (struct addrinfo *i = res; i != NULL; i = i->ai_next) {
         sockfd = socket(i->ai_family, i->ai_socktype, i->ai_protocol);
         if (sockfd < 0) continue;
 
