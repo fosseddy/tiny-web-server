@@ -94,7 +94,7 @@ int main(void)
             write(connfd, "\r\n", 2);
             write(connfd, content, strlen(content));
         } else {
-            write(connfd, "HTTP/1.1 404 Not Found\r\n", 17);
+            write(connfd, "HTTP/1.1 404 Not Found\r\n", 24);
             write(connfd, "Server: tiny-web-server\r\n", 25);
             write(connfd, "Content-Type: text/html\r\n", 25);
             write(connfd, "Content-Length: 20\r\n", 20);
