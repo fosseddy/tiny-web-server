@@ -74,32 +74,51 @@ int main(void)
         char http_ver[10] = {0};
         sscanf(buf, "%s %s %s", method, uri, http_ver);
 
+        char header[1000] = {0};
+        char content[1000] = {0};
+
         if (strcmp(method, "GET") == 0 && strcmp(uri, "/") == 0) {
-            char content[1000] = {0};
-            char contentlen[1000] = {0};
+            sprintf(content,
+                    "<div>\r\n"
+                        "<h1>Method</h1>\r\n"
+                        "<p>%s</p>\r\n"
+                        "<h1>URI</h1>\r\n"
+                        "<p>%s</p>\r\n"
+                        "<h1>Http Version</h1>\r\n"
+                        "<p>%s</p>\r\n"
+                    "</div>\r\n",
+                    method, uri, http_ver);
 
-            sprintf(content, "<h1>Method</h1>\r\n"
-                             "<p>%s</p>\r\n"
-                             "<h1>URI</h1>\r\n"
-                             "<p>%s</p>\r\n"
-                             "<h1>Http Version</h1>\r\n"
-                             "<p>%s</p>\r\n", method, uri, http_ver);
+            sprintf(header,
+                    "HTTP/1.1 200 OK\r\n"
+                    "Server: tiny-web-server\r\n"
+                    "Content-Type: text/html\r\n"
+                    "Content-Length: %lu\r\n"
+                    "\r\n"
+                    "%s\r\n",
+                    strlen(content), content);
 
-            sprintf(contentlen, "Content-Length: %lu\r\n", strlen(content));
+            write(connfd, header, strlen(header));
 
-            write(connfd, "HTTP/1.1 200 OK\r\n", 17);
-            write(connfd, "Server: tiny-web-server\r\n", 25);
-            write(connfd, "Content-Type: text/html\r\n", 25);
-            write(connfd, contentlen, strlen(contentlen));
-            write(connfd, "\r\n", 2);
-            write(connfd, content, strlen(content));
         } else {
-            write(connfd, "HTTP/1.1 404 Not Found\r\n", 24);
-            write(connfd, "Server: tiny-web-server\r\n", 25);
-            write(connfd, "Content-Type: text/html\r\n", 25);
-            write(connfd, "Content-Length: 20\r\n", 20);
-            write(connfd, "\r\n", 2);
-            write(connfd, "<h1>Not Found</h1>\r\n", 20);
+            sprintf(content,
+                    "<div>\r\n"
+                        "<h1>Not Found</h1>\r\n"
+                        "<p>Method: %s</p>\r\n"
+                        "<p>URI: %s</p>\r\n"
+                    "</div>\r\n",
+                    method, uri);
+
+            sprintf(header,
+                    "HTTP/1.1 400 Not Found\r\n"
+                    "Server: tiny-web-server\r\n"
+                    "Content-Type: text/html\r\n"
+                    "Content-Length: %lu\r\n"
+                    "\r\n"
+                    "%s\r\n",
+                    strlen(content), content);
+
+            write(connfd, header, strlen(header));
         }
 
         close(connfd);
