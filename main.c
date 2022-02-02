@@ -67,7 +67,7 @@ int main(void)
 
         char buf[1000] = {0};
         read(connfd, buf, 1000);
-        printf("%s\n", buf);
+        printf("%s", buf);
 
         char method[10] = {0};
         char uri[1000] = {0};
