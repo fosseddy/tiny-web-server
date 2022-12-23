@@ -6,6 +6,9 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <assert.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 #define HOSTCAP 256
 #define PORTCAP 8
@@ -116,20 +119,20 @@ int parse_uri(char *uri, char *filepath, char *cgiargs)
 
     if (strstr(uri, "/static/") != NULL) {
         rc = 1;
-        filepath[0] = '.';
+        strcpy(filepath, ".");
         strcat(filepath, uri);
         if (filepath[strlen(filepath) - 1] == '/') {
             strcat(filepath, "index.html");
         }
     } else if (strstr(uri, "/cgi/") != NULL) {
         rc = 0;
-        filepath[0] = '.';
-        cgiargs[0] = '\0';
+        strcpy(cgiargs, "");
         p = strchr(uri, '?');
         if (p != NULL) {
             *p = '\0';
             strcpy(cgiargs, p + 1);
         }
+        strcpy(filepath, ".");
         strcat(filepath, uri);
     } else {
         rc = -1;
@@ -145,7 +148,7 @@ void write_error(int sockfd, char *status_code, char *status_msg, char *msg)
     ssize_t n;
 
     sprintf(body, "<html>"
-                  "<title>Tiny Error</title>"
+                  "<head><title>Tiny Error</title></head>"
                   "<body>"
                   "<p>%s %s</p>"
                   "<p>%s</p>"
@@ -167,10 +170,59 @@ void write_error(int sockfd, char *status_code, char *status_msg, char *msg)
     assert(n == bodylen);
 }
 
+void get_filetype(char *path, char *type)
+{
+    if (strstr(path, ".html") != NULL) {
+        strcpy(type, "text/html");
+    } else if (strstr(path, ".gif") != NULL) {
+        strcpy(type, "image/gif");
+    } else if (strstr(path, ".png") != NULL) {
+        strcpy(type, "image/png");
+    } else if (strstr(path, ".jpg") != NULL) {
+        strcpy(type, "image/jpeg");
+    } else {
+        strcpy(type, "text/plain");
+    }
+}
+
+void serve_static(int sockfd, char *filepath, off_t filesize)
+{
+    char filetype[128], buf[256], *filedata;
+    int fd, rc;
+    size_t buflen;
+    ssize_t n;
+
+    get_filetype(filepath, filetype);
+
+    sprintf(buf, "HTTP/1.1 200 OK\r\n"
+                 "Content-type: %s\r\n"
+                 "Content-length: %d\r\n\r\n", filetype, filesize);
+    buflen = strlen(buf);
+
+    fd = open(filepath, O_RDONLY);
+    assert(fd > 0);
+    filedata = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
+    assert(filedata != MAP_FAILED);
+
+    n = write(sockfd, buf, buflen);
+    assert(n == buflen);
+    n = write(sockfd, filedata, filesize);
+    assert(n == filesize);
+
+    close(fd);
+    rc = munmap(filedata, filesize);
+    assert(rc == 0);
+}
+
+void serve_cgi()
+{
+}
+
 void handle_req(int fd)
 {
     char method[8], uri[512], http_ver[16], filepath[256], cgiargs[256];
-    int is_static;
+    int resource_type, rc;
+    struct stat statbuf;
 
     read_reqline(fd, method, uri, http_ver);
 
@@ -181,23 +233,35 @@ void handle_req(int fd)
 
     read_headers(fd);
 
-    is_static = parse_uri(uri, filepath, cgiargs);
-    if (is_static < 0) {
+    resource_type = parse_uri(uri, filepath, cgiargs);
+    if (resource_type < 0) {
         write_error(fd, "404", "Not found", "Unknown resource type");
         return;
     }
 
-    if (is_static) {
-        // serve static content
+    rc = stat(filepath, &statbuf);
+    if (rc < 0) {
+        write_error(fd, "404", "Not found", "File does not exist");
+        return;
     }
 
-    // serve cgi content
+    if (resource_type == 1) {
+        if (!S_ISREG(statbuf.st_mode) || !(statbuf.st_mode & S_IRUSR)) {
+            write_error(fd, "403", "Forbidden",
+                        "Not allowed to read this file");
+            return;
+        }
+        serve_static(fd, filepath, statbuf.st_size);
+        return;
+    }
 
-    char *buf = "HTTP/1.1 200 OK\r\n"
-                "Content-type: text/html\r\n"
-                "Content-length: 23\r\n\r\n"
-                "<h1>hello, world</h1>\r\n";
-    write(fd, buf, strlen(buf));
+    if (!S_ISREG(statbuf.st_mode) || !(statbuf.st_mode & S_IXUSR)) {
+        write_error(fd, "403", "Forbidden",
+                    "Not allowed to execute this file");
+        return;
+    }
+
+    serve_cgi();
 }
 
 // @Todo(art): implement net_read, net_write
