@@ -265,6 +265,7 @@ void handle_req(int fd)
 }
 
 // @Todo(art): implement net_read, net_write
+// @Todo(art): better CRLF handle
 int main(int argc, char **argv)
 {
     struct sockaddr_storage cliaddr;
