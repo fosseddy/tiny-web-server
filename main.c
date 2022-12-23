@@ -1,130 +1,98 @@
-#define _POSIX_C_SOURCE 200112L
-
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
 #include <unistd.h>
-#include <errno.h>
-
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 
-int main(void)
-{
-    char *host = "localhost";
-    char *port = "3000";
+#define HOSTCAP 255
+#define PORTCAP 6
 
-    struct addrinfo *res, hints;
+int open_listensock(char *port)
+{
+    struct addrinfo *info, *addr, hints;
+    int rc, sockfd, sockopt_val = 1;
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV | AI_ADDRCONFIG;
 
-    int err = getaddrinfo(host, port, &hints, &res);
-    if (err > 0) {
-        fprintf(stderr, "%s\n", gai_strerror(err));
+    rc = getaddrinfo(NULL, port, &hints, &info);
+    if (rc != 0) {
+        fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(rc));
         exit(1);
     }
 
-    int sockfd = -1;
-    int optval = 1;
-    for (struct addrinfo *i = res; i != NULL; i = i->ai_next) {
-        sockfd = socket(i->ai_family, i->ai_socktype, i->ai_protocol);
+    for (addr = info; addr != NULL; addr = addr->ai_next) {
+        sockfd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
         if (sockfd < 0) continue;
 
-        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int));
+        rc = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR,
+                        &sockopt_val, sizeof(int));
+        if (rc < 0) {
+            perror("setsockopt failed");
+            exit(1);
+        }
 
-        if (bind(sockfd, i->ai_addr, i->ai_addrlen) == 0) break;
+        rc = bind(sockfd, addr->ai_addr, addr->ai_addrlen);
+        if (rc == 0) break;
 
         close(sockfd);
         sockfd = -1;
     }
 
-    freeaddrinfo(res);
-
     if (sockfd < 0) {
-        fprintf(stderr, "Could not create socket\n");
+        perror("failed to open and bind socket");
         exit(1);
     }
 
-    if (listen(sockfd, 1024) < 0) {
-        fprintf(stderr, "%s\n", strerror(errno));
+    rc = listen(sockfd, 1024);
+    if (rc < 0) {
+        perror("listen failed");
         exit(1);
     }
 
+    freeaddrinfo(info);
+    return sockfd;
+}
+
+int main(int argc, char **argv)
+{
     struct sockaddr_storage cliaddr;
-    while (1) {
-        socklen_t cliaddrlen = sizeof(struct sockaddr_storage);
+    socklen_t cliaddrlen;
+    char cliport[PORTCAP], clihost[HOSTCAP];
+    int rc, sockfd, connfd;
 
-        int connfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cliaddrlen);
+    if (argc < 2) {
+        fprintf(stderr, "%s [PORT]\n", argv[0]);
+        return 1;
+    }
+
+    sockfd = open_listensock(argv[1]);
+    printf("Server is listening on port %s\n", argv[1]);
+
+    for (;;) {
+        cliaddrlen = sizeof(struct sockaddr_storage);
+        connfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cliaddrlen);
         if (connfd < 0) {
-            fprintf(stderr, "%s\n", strerror(errno));
+            perror("accept failed");
             continue;
         }
 
-        char buf[1000] = {0};
-        read(connfd, buf, 1000);
-        printf("%s", buf);
-
-        char method[10] = {0};
-        char uri[1000] = {0};
-        char http_ver[10] = {0};
-        sscanf(buf, "%s %s %s", method, uri, http_ver);
-
-        char header[1000] = {0};
-        char content[1000] = {0};
-
-        if (strcmp(method, "GET") == 0 && strcmp(uri, "/") == 0) {
-            sprintf(content,
-                    "<div>\r\n"
-                        "<h1>Method</h1>\r\n"
-                        "<p>%s</p>\r\n"
-                        "<h1>URI</h1>\r\n"
-                        "<p>%s</p>\r\n"
-                        "<h1>Http Version</h1>\r\n"
-                        "<p>%s</p>\r\n"
-                    "</div>\r\n",
-                    method, uri, http_ver);
-
-            sprintf(header,
-                    "HTTP/1.1 200 OK\r\n"
-                    "Server: tiny-web-server\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Content-Length: %lu\r\n"
-                    "\r\n"
-                    "%s\r\n",
-                    strlen(content), content);
-
-            write(connfd, header, strlen(header));
-
+        rc = getnameinfo((struct sockaddr *) &cliaddr, cliaddrlen,
+                         clihost, HOSTCAP, cliport, PORTCAP,
+                         NI_NUMERICSERV | NI_NUMERICHOST);
+        if (rc != 0) {
+            fprintf(stderr, "getnameinfo failed: %s\n", gai_strerror(rc));
         } else {
-            sprintf(content,
-                    "<div>\r\n"
-                        "<h1>Not Found</h1>\r\n"
-                        "<p>Method: %s</p>\r\n"
-                        "<p>URI: %s</p>\r\n"
-                    "</div>\r\n",
-                    method, uri);
-
-            sprintf(header,
-                    "HTTP/1.1 400 Not Found\r\n"
-                    "Server: tiny-web-server\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Content-Length: %lu\r\n"
-                    "\r\n"
-                    "%s\r\n",
-                    strlen(content), content);
-
-            write(connfd, header, strlen(header));
+            printf("Client %s:%s connected\n", clihost, cliport);
         }
 
         close(connfd);
     }
 
     close(sockfd);
-
     return 0;
 }
