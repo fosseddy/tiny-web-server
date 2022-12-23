@@ -6,8 +6,8 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-#define HOSTCAP 255
-#define PORTCAP 6
+#define HOSTCAP 256
+#define PORTCAP 8
 
 int open_listensock(char *port)
 {
