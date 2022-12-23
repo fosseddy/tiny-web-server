@@ -78,7 +78,7 @@ int main(int argc, char **argv)
         connfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cliaddrlen);
         if (connfd < 0) {
             perror("accept failed");
-            continue;
+            return 1;
         }
 
         rc = getnameinfo((struct sockaddr *) &cliaddr, cliaddrlen,
@@ -86,9 +86,10 @@ int main(int argc, char **argv)
                          NI_NUMERICSERV | NI_NUMERICHOST);
         if (rc != 0) {
             fprintf(stderr, "getnameinfo failed: %s\n", gai_strerror(rc));
-        } else {
-            printf("Client %s:%s connected\n", clihost, cliport);
+            return 1;
         }
+
+        printf("Client %s:%s connected\n", clihost, cliport);
 
         close(connfd);
     }
