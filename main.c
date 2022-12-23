@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <assert.h>
 
 #define HOSTCAP 256
 #define PORTCAP 8
@@ -58,12 +59,154 @@ int open_listensock(char *port)
     return sockfd;
 }
 
+ssize_t net_readline(int sockfd, char *buf, size_t bufsize)
+{
+    char ch;
+    size_t i;
+    ssize_t n;
+
+    for (i = 0; i < bufsize - 1; ++i) {
+        n = read(sockfd, &ch, 1);
+        if (n < 0) return -1;
+        if (n == 0) break;
+        if (ch == '\n') {
+            // remove \r
+            assert(i > 0);
+            buf--;
+            i--;
+            break;
+        }
+        *buf++ = ch;
+    }
+
+    *buf = '\0';
+    return i;
+}
+
+void read_reqline(int sockfd, char *method, char *uri, char *http_ver)
+{
+    char buf[1024];
+    ssize_t n;
+    int rc;
+
+    n = net_readline(sockfd, buf, sizeof(buf));
+    assert(n >= 0);
+    rc = sscanf(buf, "%s %s %s", method, uri, http_ver);
+    assert(rc == 3);
+    printf("%s\n", buf);
+}
+
+void read_headers(int sockfd)
+{
+    char buf[1024];
+    ssize_t n;
+
+    for (;;) {
+        n = net_readline(sockfd, buf, sizeof(buf));
+        assert(n >= 0);
+        if (n == 0) break;
+        printf("%s\n", buf);
+    }
+}
+
+int parse_uri(char *uri, char *filepath, char *cgiargs)
+{
+    int rc;
+    char *p;
+
+    if (strstr(uri, "/static/") != NULL) {
+        rc = 1;
+        filepath[0] = '.';
+        strcat(filepath, uri);
+        if (filepath[strlen(filepath) - 1] == '/') {
+            strcat(filepath, "index.html");
+        }
+    } else if (strstr(uri, "/cgi/") != NULL) {
+        rc = 0;
+        filepath[0] = '.';
+        cgiargs[0] = '\0';
+        p = strchr(uri, '?');
+        if (p != NULL) {
+            *p = '\0';
+            strcpy(cgiargs, p + 1);
+        }
+        strcat(filepath, uri);
+    } else {
+        rc = -1;
+    }
+
+    return rc;
+}
+
+void write_error(int sockfd, char *status_code, char *status_msg, char *msg)
+{
+    char buf[512], body[1024];
+    size_t buflen, bodylen;
+    ssize_t n;
+
+    sprintf(body, "<html>"
+                  "<title>Tiny Error</title>"
+                  "<body>"
+                  "<p>%s %s</p>"
+                  "<p>%s</p>"
+                  "<hr />"
+                  "<p>The Tiny Web Server</p>"
+                  "</body>"
+                  "</html>\r\n", status_code, status_msg, msg);
+    bodylen = strlen(body);
+
+    sprintf(buf, "HTTP/1.1 %s %s\r\n"
+                 "Content-type: text/html\r\n"
+                 "Content-length: %d\r\n\r\n", status_code, status_msg,
+                                               bodylen);
+    buflen = strlen(buf);
+
+    n = write(sockfd, buf, buflen);
+    assert(n == buflen);
+    n = write(sockfd, body, bodylen);
+    assert(n == bodylen);
+}
+
+void handle_req(int fd)
+{
+    char method[8], uri[512], http_ver[16], filepath[256], cgiargs[256];
+    int is_static;
+
+    read_reqline(fd, method, uri, http_ver);
+
+    if (strcmp(method, "GET") != 0) {
+        write_error(fd, "501", "Not implemented", "Only GET is supported");
+        return;
+    }
+
+    read_headers(fd);
+
+    is_static = parse_uri(uri, filepath, cgiargs);
+    if (is_static < 0) {
+        write_error(fd, "404", "Not found", "Unknown resource type");
+        return;
+    }
+
+    if (is_static) {
+        // serve static content
+    }
+
+    // serve cgi content
+
+    char *buf = "HTTP/1.1 200 OK\r\n"
+                "Content-type: text/html\r\n"
+                "Content-length: 23\r\n\r\n"
+                "<h1>hello, world</h1>\r\n";
+    write(fd, buf, strlen(buf));
+}
+
+// @Todo(art): implement net_read, net_write
 int main(int argc, char **argv)
 {
     struct sockaddr_storage cliaddr;
     socklen_t cliaddrlen;
     char cliport[PORTCAP], clihost[HOSTCAP];
-    int rc, sockfd, connfd;
+    int rc, sockfd, clifd;
 
     if (argc < 2) {
         fprintf(stderr, "%s [PORT]\n", argv[0]);
@@ -75,8 +218,8 @@ int main(int argc, char **argv)
 
     for (;;) {
         cliaddrlen = sizeof(struct sockaddr_storage);
-        connfd = accept(sockfd, (struct sockaddr *) &cliaddr, &cliaddrlen);
-        if (connfd < 0) {
+        clifd = accept(sockfd, (struct sockaddr *) &cliaddr, &cliaddrlen);
+        if (clifd < 0) {
             perror("accept failed");
             return 1;
         }
@@ -89,9 +232,12 @@ int main(int argc, char **argv)
             return 1;
         }
 
-        printf("Client %s:%s connected\n", clihost, cliport);
+        printf("-- Client %s:%s connected --\n", clihost, cliport);
 
-        close(connfd);
+        handle_req(clifd);
+        close(clifd);
+
+        printf("-- Client %s:%s disconnected --\n", clihost, cliport);
     }
 
     close(sockfd);
