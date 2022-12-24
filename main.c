@@ -89,13 +89,9 @@ ssize_t net_readline(int sockfd, char *buf, size_t bufsize)
 void read_reqline(int sockfd, char *method, char *uri, char *http_ver)
 {
     char buf[1024];
-    ssize_t n;
-    int rc;
 
-    n = net_readline(sockfd, buf, sizeof(buf));
-    assert(n >= 0);
-    rc = sscanf(buf, "%s %s %s", method, uri, http_ver);
-    assert(rc == 3);
+    net_readline(sockfd, buf, sizeof(buf));
+    sscanf(buf, "%s %s %s", method, uri, http_ver);
     printf("%s\n", buf);
 }
 
@@ -106,7 +102,6 @@ void read_headers(int sockfd)
 
     for (;;) {
         n = net_readline(sockfd, buf, sizeof(buf));
-        assert(n >= 0);
         if (n == 0) break;
         printf("%s\n", buf);
     }
@@ -145,7 +140,6 @@ void write_error(int sockfd, char *status_code, char *status_msg, char *msg)
 {
     char buf[512], body[1024];
     size_t buflen, bodylen;
-    ssize_t n;
 
     sprintf(body, "<html>"
                   "<head><title>Tiny Error</title></head>"
@@ -161,13 +155,11 @@ void write_error(int sockfd, char *status_code, char *status_msg, char *msg)
     sprintf(buf, "HTTP/1.1 %s %s\r\n"
                  "Content-type: text/html\r\n"
                  "Content-length: %ld\r\n\r\n", status_code, status_msg,
-                                               bodylen);
+                                                bodylen);
     buflen = strlen(buf);
 
-    n = write(sockfd, buf, buflen);
-    assert((size_t) n == buflen);
-    n = write(sockfd, body, bodylen);
-    assert((size_t) n == bodylen);
+    write(sockfd, buf, buflen);
+    write(sockfd, body, bodylen);
 }
 
 void get_filetype(char *path, char *type)
@@ -190,7 +182,6 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
     char filetype[128], buf[256], *filedata;
     int fd, rc;
     size_t buflen;
-    ssize_t n;
 
     get_filetype(filepath, filetype);
 
@@ -200,14 +191,11 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
     buflen = strlen(buf);
 
     fd = open(filepath, O_RDONLY);
-    assert(fd >= 0);
     filedata = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
     assert(filedata != MAP_FAILED);
 
-    n = write(sockfd, buf, buflen);
-    assert((size_t) n == buflen);
-    n = write(sockfd, filedata, filesize);
-    assert(n == filesize);
+    write(sockfd, buf, buflen);
+    write(sockfd, filedata, filesize);
 
     close(fd);
     rc = munmap(filedata, filesize);
@@ -216,7 +204,6 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
 
 void serve_cgi(int sockfd, char *cgipath, char *cgiquery)
 {
-    int rc;
     pid_t pid;
     char *argv[2] = {cgipath, NULL};
 
@@ -225,17 +212,12 @@ void serve_cgi(int sockfd, char *cgipath, char *cgiquery)
 
     if (pid == 0) {
         if (strlen(cgiquery) > 0) {
-            rc = setenv("QUERY_STRING", cgiquery, 1);
-            assert(rc == 0);
+            setenv("QUERY_STRING", cgiquery, 1);
         }
-
-        rc = dup2(sockfd, STDOUT_FILENO);
-        assert(rc >= 0);
-
+        dup2(sockfd, STDOUT_FILENO);
         execve(cgipath, argv, environ);
         assert(0);
     }
-
     wait(NULL);
 }
 
