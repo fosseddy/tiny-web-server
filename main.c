@@ -160,14 +160,14 @@ void write_error(int sockfd, char *status_code, char *status_msg, char *msg)
 
     sprintf(buf, "HTTP/1.1 %s %s\r\n"
                  "Content-type: text/html\r\n"
-                 "Content-length: %d\r\n\r\n", status_code, status_msg,
+                 "Content-length: %ld\r\n\r\n", status_code, status_msg,
                                                bodylen);
     buflen = strlen(buf);
 
     n = write(sockfd, buf, buflen);
-    assert(n == buflen);
+    assert((size_t) n == buflen);
     n = write(sockfd, body, bodylen);
-    assert(n == bodylen);
+    assert((size_t) n == bodylen);
 }
 
 void get_filetype(char *path, char *type)
@@ -196,7 +196,7 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
 
     sprintf(buf, "HTTP/1.1 200 OK\r\n"
                  "Content-type: %s\r\n"
-                 "Content-length: %d\r\n\r\n", filetype, filesize);
+                 "Content-length: %ld\r\n\r\n", filetype, filesize);
     buflen = strlen(buf);
 
     fd = open(filepath, O_RDONLY);
@@ -205,7 +205,7 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
     assert(filedata != MAP_FAILED);
 
     n = write(sockfd, buf, buflen);
-    assert(n == buflen);
+    assert((size_t) n == buflen);
     n = write(sockfd, filedata, filesize);
     assert(n == filesize);
 
