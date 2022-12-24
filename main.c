@@ -11,9 +11,6 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 
-#define HOSTCAP 256
-#define PORTCAP 8
-
 extern char **environ;
 
 int open_listensock(char *port)
@@ -294,7 +291,7 @@ int main(int argc, char **argv)
 {
     struct sockaddr_storage cliaddr;
     socklen_t cliaddrlen;
-    char cliport[PORTCAP], clihost[HOSTCAP];
+    char cliport[8], clihost[256];
     int rc, sockfd, clifd;
 
     if (argc < 2) {
@@ -314,7 +311,7 @@ int main(int argc, char **argv)
         }
 
         rc = getnameinfo((struct sockaddr *) &cliaddr, cliaddrlen,
-                         clihost, HOSTCAP, cliport, PORTCAP,
+                         clihost, sizeof(clihost), cliport, sizeof(cliport),
                          NI_NUMERICSERV | NI_NUMERICHOST);
         if (rc != 0) {
             fprintf(stderr, "getnameinfo failed: %s\n", gai_strerror(rc));
