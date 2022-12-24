@@ -9,9 +9,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
 
 #define HOSTCAP 256
 #define PORTCAP 8
+
+extern char **environ;
 
 int open_listensock(char *port)
 {
@@ -214,8 +217,29 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
     assert(rc == 0);
 }
 
-void serve_cgi()
+void serve_cgi(int sockfd, char *cgipath, char *cgiquery)
 {
+    int rc;
+    pid_t pid;
+    char *argv[2] = {cgipath, NULL};
+
+    pid = fork();
+    assert(pid >= 0);
+
+    if (pid == 0) {
+        if (strlen(cgiquery) > 0) {
+            rc = setenv("QUERY_STRING", cgiquery, 1);
+            assert(rc == 0);
+        }
+
+        rc = dup2(sockfd, STDOUT_FILENO);
+        assert(rc >= 0);
+
+        execve(cgipath, argv, environ);
+        assert(0); // unreachable
+    }
+
+    wait(NULL);
 }
 
 void handle_req(int fd)
@@ -227,7 +251,7 @@ void handle_req(int fd)
     read_reqline(fd, method, uri, http_ver);
 
     if (strcmp(method, "GET") != 0) {
-        write_error(fd, "501", "Not implemented", "Only GET is supported");
+        write_error(fd, "501", "Not Implemented", "Only GET is supported");
         return;
     }
 
@@ -235,13 +259,13 @@ void handle_req(int fd)
 
     resource_type = parse_uri(uri, filepath, cgiargs);
     if (resource_type < 0) {
-        write_error(fd, "404", "Not found", "Unknown resource type");
+        write_error(fd, "404", "Not Found", "Unknown resource type");
         return;
     }
 
     rc = stat(filepath, &statbuf);
     if (rc < 0) {
-        write_error(fd, "404", "Not found", "File does not exist");
+        write_error(fd, "404", "Not Found", "File does not exist");
         return;
     }
 
@@ -261,7 +285,7 @@ void handle_req(int fd)
         return;
     }
 
-    serve_cgi();
+    serve_cgi(fd, filepath, cgiargs);
 }
 
 // @Todo(art): implement net_read, net_write
