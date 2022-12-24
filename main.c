@@ -2,12 +2,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <netdb.h>
 #include <assert.h>
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
 
@@ -73,10 +73,10 @@ ssize_t net_readline(int sockfd, char *buf, size_t bufsize)
         if (n < 0) return -1;
         if (n == 0) break;
         if (ch == '\n') {
-            // remove \r
-            assert(i > 0);
-            buf--;
-            i--;
+            if (i > 0 && *(buf - 1) == '\r') {
+                buf--;
+                i--;
+            }
             break;
         }
         *buf++ = ch;
@@ -129,8 +129,8 @@ int parse_uri(char *uri, char *filepath, char *cgiargs)
         strcpy(cgiargs, "");
         p = strchr(uri, '?');
         if (p != NULL) {
-            *p = '\0';
-            strcpy(cgiargs, p + 1);
+            *p++ = '\0';
+            strcpy(cgiargs, p);
         }
         strcpy(filepath, ".");
         strcat(filepath, uri);
@@ -200,7 +200,7 @@ void serve_static(int sockfd, char *filepath, off_t filesize)
     buflen = strlen(buf);
 
     fd = open(filepath, O_RDONLY);
-    assert(fd > 0);
+    assert(fd >= 0);
     filedata = mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
     assert(filedata != MAP_FAILED);
 
@@ -233,7 +233,7 @@ void serve_cgi(int sockfd, char *cgipath, char *cgiquery)
         assert(rc >= 0);
 
         execve(cgipath, argv, environ);
-        assert(0); // unreachable
+        assert(0);
     }
 
     wait(NULL);
@@ -285,8 +285,7 @@ void handle_req(int fd)
     serve_cgi(fd, filepath, cgiargs);
 }
 
-// @Todo(art): implement net_read, net_write
-// @Todo(art): better CRLF handle
+// @Todo(art): implement net_read, net_write to handle partial reads/writes
 int main(int argc, char **argv)
 {
     struct sockaddr_storage cliaddr;
